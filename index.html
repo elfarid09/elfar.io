@@ -1,60 +1,108 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Spotify Music Search</title>
-  <style>
-    body { font-family: sans-serif; text-align: center; padding: 2em; }
-    input { width: 300px; padding: 8px; margin-right: 10px; }
-    iframe { margin-top: 20px; border-radius: 12px; }
-  </style>
+    <meta charset="UTF-8">
+    <title>Spotify Web Playback SDK</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #121212; color: white; }
+        button { padding: 10px; background: #1DB954; color: white; border: none; cursor: pointer; }
+        #player { margin-top: 20px; }
+    </style>
 </head>
 <body>
-  <h2>Spotify Music Search</h2>
-  <input type="text" id="searchInput" placeholder="Search for a song...">
-  <button onclick="searchSpotify()">Search</button>
-  <div id="result"></div>
+    <h1>Login Spotify</h1>
+    <button onclick="loginToSpotify()">Login with Spotify</button>
+    <div id="player"></div>
 
-  <script>
-    const client_id = '82c04559d1ff4bf6858132c1345dbaf2';
-    const client_secret = 'd3bfc6119719459eb23ce00aab00a69d';
-    let access_token = '';
+    <script>
+        const clientId = '2004365f23524bc5ae3234711c217c98';
+        const redirectUri = 'https://elfarid09.github.io/elfar.io/';
+        const scope = 'streaming user-read-email user-read-private user-library-read';
+        const clientSecret = '2c4178f53b2a4a47bc75c6f1c9538e9a';
+        const authEndpoint = 'https://accounts.spotify.com/authorize';
+        const tokenEndpoint = 'https://accounts.spotify.com/api/token';
 
-    async function getToken() {
-      const result = await fetch('https://accounts.spotify.com/api/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Authorization': 'Basic ' + btoa(client_id + ':' + client_secret)
-        },
-        body: 'grant_type=client_credentials'
-      });
-      const data = await result.json();
-      access_token = data.access_token;
-    }
+        let accessToken = '';
+        let player;
 
-    async function searchSpotify() {
-      const query = document.getElementById('searchInput').value;
-      if (!query) return;
+        // Step 1: Login to Spotify and get access token
+        function loginToSpotify() {
+            const authUrl = `${authEndpoint}?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}`;
+            window.location.href = authUrl;
+        }
 
-      if (!access_token) await getToken();
+        // Step 2: Get access token after user authorization
+        function getTokenFromUrl() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            if (code) {
+                fetch(tokenEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Authorization': 'Basic ' + btoa(clientId + ':' + clientSecret)
+                    },
+                    body: `grant_type=authorization_code&code=${code}&redirect_uri=${encodeURIComponent(redirectUri)}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    accessToken = data.access_token;
+                    localStorage.setItem('access_token', accessToken);
+                    window.history.pushState({}, null, '/');
+                    setupPlayer();
+                });
+            }
+        }
 
-      const response = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=1`, {
-        headers: { 'Authorization': 'Bearer ' + access_token }
-      });
+        // Step 3: Initialize Spotify Web Playback SDK
+        function setupPlayer() {
+            if (!accessToken) {
+                accessToken = localStorage.getItem('access_token');
+            }
 
-      const data = await response.json();
-      const track = data.tracks.items[0];
-      if (track) {
-        const embedURL = `https://open.spotify.com/embed/track/${track.id}`;
-        document.getElementById('result').innerHTML = `
-          <p><strong>${track.name}</strong> by ${track.artists.map(a => a.name).join(', ')}</p>
-          <iframe src="${embedURL}" width="300" height="80" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>
-        `;
-      } else {
-        document.getElementById('result').innerHTML = '<p>No results found.</p>';
-      }
-    }
-  </script>
+            if (accessToken) {
+                const script = document.createElement('script');
+                script.src = 'https://sdk.scdn.co/spotify-player.js';
+                script.onload = () => {
+                    player = new Spotify.Player({
+                        name: 'Web Playback SDK',
+                        getOAuthToken: cb => { cb(accessToken); },
+                        volume: 0.5
+                    });
+
+                    player.addListener('initialization_error', ({ message }) => console.error(message));
+                    player.addListener('authentication_error', ({ message }) => console.error(message));
+                    player.addListener('account_error', ({ message }) => console.error(message));
+                    player.addListener('playback_error', ({ message }) => console.error(message));
+
+                    player.addListener('player_state_changed', state => {
+                        console.log(state);
+                    });
+
+                    player.addListener('ready', ({ device_id }) => {
+                        console.log('The Web Playback SDK is ready with Device ID', device_id);
+                        playMusic();
+                    });
+
+                    player.connect();
+                };
+                document.body.appendChild(script);
+            } else {
+                loginToSpotify();
+            }
+        }
+
+        // Step 4: Play music
+        function playMusic() {
+            if (player) {
+                player.resume().then(() => {
+                    console.log('Playback started!');
+                });
+            }
+        }
+
+        window.onload = getTokenFromUrl;
+    </script>
 </body>
 </html>
